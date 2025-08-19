@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+
+# 功能：切换并聚焦指定终端应用；若未运行则启动；若已聚焦则最小化当前终端窗口。
+# 用法：toggle_app <WM_CLASS或命令>
+# 例子：toggle_app gnome-terminal
+# 依赖：xdotool, wmctrl
+
+set -euo pipefail
+
+# 目标应用（WM_CLASS 或 启动命令）。未提供参数则默认 gnome-terminal
+my_term=${1:-gnome-terminal}
+
+# 查找目标应用的窗口ID列表（未找到时忽略错误）
+my_term_pids=$(xdotool search --class "$my_term" 2>/dev/null || true)
+
+# 如果没有匹配窗口，则尝试启动应用
+if [[ -z "$my_term_pids" ]]; then
+    nohup "$my_term" >/dev/null 2>&1 &
+    # 简短等待窗口出现
+    for i in 1 2 3 4 5; do
+        sleep 0.2
+        my_term_pids=$(xdotool search --class "$my_term" 2>/dev/null || true)
+        [[ -n "$my_term_pids" ]] && break
+    done
+fi
+
+# 获取当前聚焦窗口ID（没有聚焦窗口时忽略错误）
+focused_window_id=$(xdotool getwindowfocus 2>/dev/null || true)
+
+# 判断当前聚焦是否为目标应用窗口
+is_target_focused=false
+if [[ -n "$focused_window_id" && -n "$my_term_pids" ]]; then
+    while read -r wid; do
+        if [[ "$wid" == "$focused_window_id" ]]; then
+            is_target_focused=true
+            break
+        fi
+    done <<< "$my_term_pids"
+fi
+
+if [[ "$is_target_focused" == true ]]; then
+    # 若当前已是目标终端，则最小化它
+    xdotool windowminimize "$focused_window_id"
+else
+    # 否则切换到目标终端（wmctrl -x -R 使用 WM_CLASS）
+    if ! wmctrl -x -R "$my_term" 2>/dev/null; then
+        # 若 wmctrl 未能匹配，回退到激活第一个匹配的窗口ID
+        first_id=$(printf '%s\n' "$my_term_pids" | head -n1)
+        if [[ -n "$first_id" ]]; then
+            xdotool windowactivate "$first_id"
+        fi
+    fi
+fi
