@@ -10,11 +10,15 @@ set -euo pipefail
 # 目标应用（WM_CLASS 或 启动命令）。未提供参数则默认 gnome-terminal
 my_term=${1:-gnome-terminal}
 
+# 记录是否是新启动的应用
+was_just_launched=false
+
 # 查找目标应用的窗口ID列表（未找到时忽略错误）
 my_term_pids=$(xdotool search --class "$my_term" 2>/dev/null || true)
 
 # 如果没有匹配窗口，则尝试启动应用
 if [[ -z "$my_term_pids" ]]; then
+    was_just_launched=true
     nohup "$my_term" >/dev/null 2>&1 &
     # 简短等待窗口出现
     for i in 1 2 3 4 5; do
@@ -22,6 +26,18 @@ if [[ -z "$my_term_pids" ]]; then
         my_term_pids=$(xdotool search --class "$my_term" 2>/dev/null || true)
         [[ -n "$my_term_pids" ]] && break
     done
+fi
+
+# 如果刚启动应用，直接聚焦它
+if [[ "$was_just_launched" == true ]]; then
+    # 等待一下确保窗口完全加载
+    sleep 0.3
+    # 聚焦第一个匹配的窗口
+    first_id=$(printf '%s\n' "$my_term_pids" | head -n1)
+    if [[ -n "$first_id" ]]; then
+        xdotool windowactivate "$first_id"
+    fi
+    exit 0
 fi
 
 # 获取当前聚焦窗口ID（没有聚焦窗口时忽略错误）
